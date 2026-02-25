@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Web Authenticator</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="hero">
+        <p class="eyebrow">Web Authenticator</p>
+        <h1>指纹解锁的 TOTP 管理器</h1>
+        <p class="sub">使用 WebAuthn PRF 保护你的 TOTP 秘钥，所有数据只保存在浏览器里。</p>
+      </header>
+
+      <section class="panel" id="capability">
+        <div class="panel-body">
+          <h2>设备能力检测</h2>
+          <p id="capability-text">正在检测...</p>
+        </div>
+      </section>
+
+      <section class="panel" id="setup-section" hidden>
+        <div class="panel-body">
+          <h2>创建 Passkey</h2>
+          <p>第一次使用时需要注册 Passkey，之后即可用生物识别解锁。</p>
+          <div class="actions">
+            <button id="register-btn" class="primary">创建 Passkey</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="unlock-section" hidden>
+        <div class="panel-body">
+          <h2>解锁 Vault</h2>
+          <p>用你的 Passkey 验证身份，解密本地 Vault。</p>
+          <div class="actions">
+            <button id="unlock-btn" class="primary">指纹解锁</button>
+            <button id="lock-btn" class="ghost" disabled>锁定</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="vault-section" hidden>
+        <div class="panel-body">
+          <div class="panel-header">
+            <div>
+              <h2>我的 TOTP</h2>
+              <p class="muted">数据已解锁，仅存在于当前会话内存。</p>
+            </div>
+            <div class="actions">
+              <button id="sync-time-btn" class="ghost">时间校准</button>
+            </div>
+          </div>
+
+          <form id="add-form" class="form-grid">
+            <label>
+              Issuer
+              <input id="issuer-input" type="text" placeholder="例如 GitHub" />
+            </label>
+            <label>
+              Account
+              <input id="account-input" type="text" placeholder="例如 user@example.com" />
+            </label>
+            <label class="full">
+              Secret 或 otpauth:// URL
+              <input id="secret-input" type="text" required placeholder="JBSWY3DPEHPK3PXP 或 otpauth://totp/..." />
+            </label>
+            <label>
+              Digits
+              <select id="digits-input">
+                <option value="6" selected>6</option>
+                <option value="8">8</option>
+              </select>
+            </label>
+            <label>
+              Period (秒)
+              <select id="period-input">
+                <option value="30" selected>30</option>
+                <option value="60">60</option>
+              </select>
+            </label>
+            <div class="actions align-end">
+              <button id="add-btn" class="primary" type="submit">添加账号</button>
+            </div>
+          </form>
+
+          <div id="token-list" class="token-list"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="status-panel">
+        <div class="panel-body">
+          <p id="status-text" class="status">准备就绪</p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
