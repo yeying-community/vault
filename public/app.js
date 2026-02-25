@@ -414,7 +414,7 @@ function normalizeRegistrationOptions(options) {
     challenge: base64urlToBytes(options.challenge),
     user: {
       ...options.user,
-      id: encoder.encode(options.user.id),
+      id: base64urlToBytes(options.user.id),
     },
     excludeCredentials: (options.excludeCredentials || []).map((cred) => ({
       ...cred,

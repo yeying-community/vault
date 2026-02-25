@@ -95,11 +95,16 @@ app.post('/api/webauthn/register/options', async (req, res) => {
     return;
   }
 
-  const user = data.user || {
-    id: crypto.randomUUID(),
-    name: 'local-user',
-    displayName: 'Local User',
-  };
+  const user =
+    data.user ||
+    (() => {
+      const userIdBytes = crypto.randomBytes(16);
+      return {
+        id: bufferToBase64url(userIdBytes),
+        name: 'local-user',
+        displayName: 'Local User',
+      };
+    })();
 
   const excludeCredentials = data.credential
     ? [
@@ -114,7 +119,7 @@ app.post('/api/webauthn/register/options', async (req, res) => {
   const options = generateRegistrationOptions({
     rpName,
     rpID,
-    userID: user.id,
+    userID: base64urlToBuffer(user.id),
     userName: user.name,
     userDisplayName: user.displayName,
     attestationType: 'none',
