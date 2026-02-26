@@ -85,12 +85,18 @@ app.get('/api/time', (req, res) => {
 
 app.get('/api/webauthn/status', async (req, res) => {
   const data = await loadData();
-  res.json({ registered: Boolean(data?.credential) });
+  res.json({ registered: hasValidCredential(data) });
 });
 
 app.post('/api/webauthn/register/options', async (req, res) => {
   const data = (await loadData()) || {};
-  if (data.credential && !req.body?.force) {
+  const hasCredential = hasValidCredential(data);
+  if (!hasCredential && data.credential) {
+    data.credential = null;
+    await saveData(data);
+  }
+
+  if (hasCredential && !req.body?.force) {
     res.status(409).json({ error: 'Passkey already registered.' });
     return;
   }
@@ -107,7 +113,7 @@ app.post('/api/webauthn/register/options', async (req, res) => {
           };
         })();
 
-  const excludeCredentials = data.credential
+  const excludeCredentials = hasCredential
     ? [
         {
           id: base64urlToBuffer(data.credential.id),
@@ -117,20 +123,26 @@ app.post('/api/webauthn/register/options', async (req, res) => {
       ]
     : [];
 
-  const options = generateRegistrationOptions({
-    rpName,
-    rpID,
-    userID: base64urlToBuffer(user.id),
-    userName: user.name,
-    userDisplayName: user.displayName,
-    attestationType: 'none',
-    authenticatorSelection: {
-      residentKey: 'required',
-      userVerification: 'required',
-    },
-    supportedAlgorithmIDs: [-7, -257],
-    excludeCredentials,
-  });
+  let options;
+  try {
+    options = await generateRegistrationOptions({
+      rpName,
+      rpID,
+      userID: base64urlToBuffer(user.id),
+      userName: user.name,
+      userDisplayName: user.displayName,
+      attestationType: 'none',
+      authenticatorSelection: {
+        residentKey: 'required',
+        userVerification: 'required',
+      },
+      supportedAlgorithmIDs: [-7, -257],
+      excludeCredentials,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || 'Failed to create registration options.' });
+    return;
+  }
 
   req.session.currentChallenge = options.challenge;
   req.session.challengeType = 'registration';
@@ -169,13 +181,43 @@ app.post('/api/webauthn/register/verify', async (req, res) => {
     return;
   }
 
-  const { credentialID, credentialPublicKey, counter } = registrationInfo;
+  let credentialId = '';
+  let credentialPublicKeyB64 = '';
+  let counter = 0;
+  let transports = req.body?.response?.transports || ['internal'];
+
+  if (registrationInfo.credential) {
+    credentialId = registrationInfo.credential.id || '';
+    counter =
+      typeof registrationInfo.credential.counter === 'number'
+        ? registrationInfo.credential.counter
+        : registrationInfo.counter || 0;
+    if (registrationInfo.credential.publicKey) {
+      credentialPublicKeyB64 =
+        typeof registrationInfo.credential.publicKey === 'string'
+          ? registrationInfo.credential.publicKey
+          : bufferToBase64url(registrationInfo.credential.publicKey);
+    }
+    if (Array.isArray(registrationInfo.credential.transports)) {
+      transports = registrationInfo.credential.transports;
+    }
+  } else {
+    const { credentialID, credentialPublicKey, counter: legacyCounter } = registrationInfo;
+    credentialId = bufferToBase64url(credentialID);
+    credentialPublicKeyB64 = bufferToBase64url(credentialPublicKey);
+    counter = typeof legacyCounter === 'number' ? legacyCounter : 0;
+  }
+
+  if (!credentialId || !credentialPublicKeyB64) {
+    res.status(400).json({ error: 'Registration data incomplete.' });
+    return;
+  }
 
   data.credential = {
-    id: bufferToBase64url(credentialID),
-    publicKey: bufferToBase64url(credentialPublicKey),
+    id: credentialId,
+    publicKey: credentialPublicKeyB64,
     counter,
-    transports: req.body?.response?.transports || ['internal'],
+    transports,
   };
 
   if (!data.prfSalt) {
@@ -192,22 +234,32 @@ app.post('/api/webauthn/register/verify', async (req, res) => {
 
 app.post('/api/webauthn/authenticate/options', async (req, res) => {
   const data = await loadData();
-  if (!data?.credential) {
-    res.status(400).json({ error: 'No passkey registered.' });
+  if (!hasValidCredential(data)) {
+    if (data?.credential) {
+      data.credential = null;
+      await saveData(data);
+    }
+    res.status(400).json({ error: 'No valid passkey registered.' });
     return;
   }
 
-  const options = generateAuthenticationOptions({
-    rpID,
-    userVerification: 'required',
-    allowCredentials: [
-      {
-        id: base64urlToBuffer(data.credential.id),
-        type: 'public-key',
-        transports: data.credential.transports || ['internal'],
-      },
-    ],
-  });
+  let options;
+  try {
+    options = await generateAuthenticationOptions({
+      rpID,
+      userVerification: 'required',
+      allowCredentials: [
+        {
+          id: base64urlToBuffer(data.credential.id),
+          type: 'public-key',
+          transports: data.credential.transports || ['internal'],
+        },
+      ],
+    });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || 'Failed to create authentication options.' });
+    return;
+  }
 
   req.session.currentChallenge = options.challenge;
   req.session.challengeType = 'authentication';
@@ -217,8 +269,8 @@ app.post('/api/webauthn/authenticate/options', async (req, res) => {
 
 app.post('/api/webauthn/authenticate/verify', async (req, res) => {
   const data = await loadData();
-  if (!data?.credential) {
-    res.status(400).json({ error: 'No passkey registered.' });
+  if (!hasValidCredential(data)) {
+    res.status(400).json({ error: 'No valid passkey registered.' });
     return;
   }
 
@@ -298,7 +350,34 @@ function bufferToBase64url(buffer) {
 }
 
 function base64urlToBuffer(base64url) {
+  if (base64url instanceof Uint8Array) {
+    return Buffer.from(base64url);
+  }
+  if (base64url instanceof ArrayBuffer) {
+    return Buffer.from(new Uint8Array(base64url));
+  }
+  if (Array.isArray(base64url)) {
+    return Buffer.from(base64url);
+  }
+  if (base64url && typeof base64url === 'object') {
+    if (base64url.type === 'Buffer' && Array.isArray(base64url.data)) {
+      return Buffer.from(base64url.data);
+    }
+  }
+  if (typeof base64url !== 'string') {
+    throw new Error('Invalid base64url input.');
+  }
   const padding = '='.repeat((4 - (base64url.length % 4)) % 4);
   const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
   return Buffer.from(base64, 'base64');
+}
+
+function hasValidCredential(data) {
+  return Boolean(
+    data?.credential &&
+      typeof data.credential.id === 'string' &&
+      data.credential.id.length > 0 &&
+      typeof data.credential.publicKey === 'string' &&
+      data.credential.publicKey.length > 0,
+  );
 }
