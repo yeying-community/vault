@@ -116,7 +116,8 @@ app.post('/api/webauthn/register/options', async (req, res) => {
   const excludeCredentials = hasCredential
     ? [
         {
-          id: base64urlToBuffer(data.credential.id),
+          // @simplewebauthn/server v11 expects a base64url string here.
+          id: data.credential.id,
           type: 'public-key',
           transports: data.credential.transports || ['internal'],
         },
@@ -250,7 +251,8 @@ app.post('/api/webauthn/authenticate/options', async (req, res) => {
       userVerification: 'required',
       allowCredentials: [
         {
-          id: base64urlToBuffer(data.credential.id),
+          // Keep credential ID as base64url string; converting to Buffer breaks v11 validation.
+          id: data.credential.id,
           type: 'public-key',
           transports: data.credential.transports || ['internal'],
         },
@@ -288,9 +290,10 @@ app.post('/api/webauthn/authenticate/verify', async (req, res) => {
       expectedOrigin: origin,
       expectedRPID: rpID,
       requireUserVerification: true,
-      authenticator: {
-        credentialID: base64urlToBuffer(data.credential.id),
-        credentialPublicKey: base64urlToBuffer(data.credential.publicKey),
+      // v11 uses `credential` instead of legacy `authenticator` payload shape.
+      credential: {
+        id: data.credential.id,
+        publicKey: base64urlToBuffer(data.credential.publicKey),
         counter: data.credential.counter,
         transports: data.credential.transports || ['internal'],
       },

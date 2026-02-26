@@ -23,3 +23,7 @@ npm run start
 ## 数据位置
 - Passkey 元数据：`data/webauthn.json`
 - 加密 Vault：浏览器 IndexedDB（`web-authenticator`）
+
+## 文档
+- [TOTP 工作原理与详细流程图](docs/totp-workflow.md)
+- [HOTP 工作原理与详细流程图](docs/hotp-workflow.md)
