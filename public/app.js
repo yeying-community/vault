@@ -124,7 +124,7 @@ async function onUnlock() {
     publicKey.extensions = {
       prf: {
         eval: {
-          first: base64urlToBytes(options.prfSalt),
+          first: coerceToBytes(options.prfSalt, 'prfSalt'),
         },
       },
     };
@@ -411,14 +411,14 @@ function setStatus(message, isError = false) {
 function normalizeRegistrationOptions(options) {
   return {
     ...options,
-    challenge: base64urlToBytes(options.challenge),
+    challenge: coerceToBytes(options.challenge, 'challenge'),
     user: {
       ...options.user,
-      id: base64urlToBytes(options.user.id),
+      id: coerceToBytes(options?.user?.id, 'user.id'),
     },
     excludeCredentials: (options.excludeCredentials || []).map((cred) => ({
       ...cred,
-      id: base64urlToBytes(cred.id),
+      id: coerceToBytes(cred.id, 'excludeCredentials.id'),
     })),
   };
 }
@@ -426,10 +426,10 @@ function normalizeRegistrationOptions(options) {
 function normalizeAuthenticationOptions(options) {
   return {
     ...options,
-    challenge: base64urlToBytes(options.challenge),
+    challenge: coerceToBytes(options.challenge, 'challenge'),
     allowCredentials: (options.allowCredentials || []).map((cred) => ({
       ...cred,
-      id: base64urlToBytes(cred.id),
+      id: coerceToBytes(cred.id, 'allowCredentials.id'),
     })),
   };
 }
@@ -710,6 +710,34 @@ function base64urlToBytes(base64url) {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+function coerceToBytes(value, label) {
+  if (value == null) {
+    throw new Error(`注册参数缺失：${label}`);
+  }
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+  if (Array.isArray(value)) {
+    return new Uint8Array(value);
+  }
+  if (typeof value === 'object') {
+    if (value.type === 'Buffer' && Array.isArray(value.data)) {
+      return new Uint8Array(value.data);
+    }
+    const numericValues = Object.values(value);
+    if (numericValues.length && numericValues.every((item) => Number.isInteger(item))) {
+      return new Uint8Array(numericValues);
+    }
+  }
+  if (typeof value === 'string') {
+    return base64urlToBytes(value);
+  }
+  throw new Error(`无法解析注册参数：${label}`);
 }
 
 async function api(path, options = {}) {
